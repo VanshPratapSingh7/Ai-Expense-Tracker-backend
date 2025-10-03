@@ -293,8 +293,9 @@ def serve_js():
     return send_from_directory('.', 'script.js')
 
 
-if __name__ == '__main__':
-    print("Initializing SQLite database...")
-    init_database()
-    print("Starting Flask server...")
-    app.run(debug=True, port=5000)
+if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", 5000))  # Render gives PORT env var
+    app.run(host="0.0.0.0", port=port, debug=True)
+
+
