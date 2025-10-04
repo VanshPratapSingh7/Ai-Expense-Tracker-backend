@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import sqlite3
-import json
 from datetime import datetime
 
 app = Flask(__name__)
@@ -10,10 +9,9 @@ CORS(app)
 DB_FILE = "finance.db"
 
 # ----------------- Database Helpers -----------------
-
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row  # makes rows behave like dict
+    conn.row_factory = sqlite3.Row
     return conn
 
 def init_database():
@@ -33,7 +31,7 @@ def init_database():
         )
     """)
 
-    # Transactions table
+    # Transactions
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY,
@@ -49,7 +47,7 @@ def init_database():
         )
     """)
 
-    # Categories table
+    # Categories
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,7 +60,7 @@ def init_database():
         )
     """)
 
-    # Goals table
+    # Goals
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS goals (
             id INTEGER PRIMARY KEY,
@@ -75,7 +73,7 @@ def init_database():
         )
     """)
 
-    # Achievements table
+    # Achievements
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS achievements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,11 +104,9 @@ def get_data():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # User
         cursor.execute("SELECT * FROM users WHERE id = 1")
         user = cursor.fetchone()
 
-        # Transactions
         cursor.execute("""
             SELECT id, type, amount, category, emoji, description, date, original_text
             FROM transactions WHERE user_id = 1
@@ -118,21 +114,13 @@ def get_data():
         """)
         transactions = [dict(row) for row in cursor.fetchall()]
 
-        # Categories
-        cursor.execute("""
-            SELECT name, total, count, emoji
-            FROM categories WHERE user_id = 1
-        """)
+        cursor.execute("SELECT name, total, count, emoji FROM categories WHERE user_id = 1")
         cats = [dict(row) for row in cursor.fetchall()]
         categories = {c["name"]: {
             "total": c["total"], "count": c["count"], "emoji": c["emoji"]
         } for c in cats}
 
-        # Goals
-        cursor.execute("""
-            SELECT id, name, target_amount, current_amount, deadline
-            FROM goals WHERE user_id = 1
-        """)
+        cursor.execute("SELECT id, name, target_amount, current_amount, deadline FROM goals WHERE user_id = 1")
         goals = []
         for g in cursor.fetchall():
             goals.append({
@@ -143,11 +131,7 @@ def get_data():
                 "deadline": g["deadline"]
             })
 
-        # Achievements
-        cursor.execute("""
-            SELECT achievement_id, unlocked_at
-            FROM achievements WHERE user_id = 1
-        """)
+        cursor.execute("SELECT achievement_id, unlocked_at FROM achievements WHERE user_id = 1")
         achievements = []
         for a in cursor.fetchall():
             achievements.append({
@@ -173,10 +157,12 @@ def get_data():
     finally:
         conn.close()
 
+
 @app.route('/api/data', methods=['POST'])
 def save_data():
     try:
-        data = request.json
+        data = request.json or {}
+
         conn = get_db_connection()
         cursor = conn.cursor()
 
@@ -195,56 +181,70 @@ def save_data():
             data.get("savingsGoal", 20)
         ))
 
-        # Clear and insert transactions
+        # Transactions
         cursor.execute("DELETE FROM transactions WHERE user_id = 1")
         for t in data.get("transactions", []):
             cursor.execute("""
                 INSERT INTO transactions (id, user_id, type, amount, category, emoji, description, date, original_text)
                 VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                t["id"], t["type"], t["amount"], t["category"],
-                t.get("emoji", "💳"), t.get("description", ""),
-                t.get("date", ""), t.get("originalText", "")
+                t.get("id", int(datetime.now().timestamp())),
+                t.get("type", "expense"),
+                t.get("amount", 0),
+                t.get("category", "Other"),
+                t.get("emoji", "💳"),
+                t.get("note", ""),
+                t.get("date", datetime.now().strftime("%d-%b-%Y")),
+                t.get("originalText", "")
             ))
 
-        # Clear and insert categories
+        # Categories
         cursor.execute("DELETE FROM categories WHERE user_id = 1")
         for name, c in data.get("categories", {}).items():
             cursor.execute("""
                 INSERT INTO categories (user_id, name, total, count, emoji)
                 VALUES (1, ?, ?, ?, ?)
             """, (
-                name, c.get("total", 0), c.get("count", 0), c.get("emoji", "💳")
+                name,
+                c.get("total", 0),
+                c.get("count", 0),
+                c.get("emoji", "💳")
             ))
 
-        # Clear and insert goals
+        # Goals
         cursor.execute("DELETE FROM goals WHERE user_id = 1")
         for g in data.get("goals", []):
             cursor.execute("""
                 INSERT INTO goals (id, user_id, name, target_amount, current_amount, deadline)
                 VALUES (?, 1, ?, ?, ?, ?)
             """, (
-                g["id"], g["name"], g.get("targetAmount", 0),
-                g.get("currentAmount", 0), g.get("deadline")
+                g.get("id", int(datetime.now().timestamp())),
+                g.get("name", "Unnamed Goal"),
+                g.get("targetAmount", 0),
+                g.get("currentAmount", 0),
+                g.get("deadline")
             ))
 
-        # Clear and insert achievements
+        # Achievements
         cursor.execute("DELETE FROM achievements WHERE user_id = 1")
         for a in data.get("achievements", []):
             cursor.execute("""
                 INSERT INTO achievements (user_id, achievement_id, unlocked_at)
                 VALUES (1, ?, ?)
             """, (
-                a["id"], a.get("unlockedAt")
+                a.get("id", "unknown"),
+                a.get("unlockedAt", datetime.now().isoformat())
             ))
 
         conn.commit()
         return jsonify({"success": True, "message": "Data saved successfully"})
 
     except Exception as e:
+        print("Error in save_data:", str(e))
         return jsonify({"success": False, "message": str(e)}), 500
     finally:
         conn.close()
+
 
 @app.route('/api/reset', methods=['POST'])
 def reset_data():
@@ -274,12 +274,34 @@ def reset_data():
     finally:
         conn.close()
 
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     return jsonify({"success": True, "message": "Server is running"})
 
-# ----------------- Serve Frontend -----------------
 
+# ----------------- Mock Notifications -----------------
+mock_notifications = [
+    "Credited ₹5000 Salary",
+    "Debited ₹1200 Amazon Shopping",
+    "Debited ₹500 Uber Ride",
+    "Credited ₹200 Cashback",
+    "Debited ₹3000 Rent"
+]
+mock_index = 0
+
+@app.route('/api/next-notification', methods=['GET'])
+def next_mock_notification():
+    global mock_index
+    if mock_index < len(mock_notifications):
+        message = mock_notifications[mock_index]
+        mock_index += 1
+        return jsonify({"success": True, "notification": message})
+    else:
+        return jsonify({"success": False, "message": "No more notifications"})
+
+
+# ----------------- Serve Frontend -----------------
 @app.route('/')
 def serve_index():
     return send_from_directory('.', 'index.html')
@@ -293,10 +315,9 @@ def serve_js():
     return send_from_directory('.', 'script.js')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+    print("Initializing SQLite database...")
+    init_database()
     import os
-    port = int(os.environ.get("PORT", 5000))  # Render gives PORT env var
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
-
-
-
