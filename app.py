@@ -173,6 +173,28 @@ def get_data():
     finally:
         conn.close()
 
+# Mock notifications (simulating SMS/bank messages)
+mock_notifications = [
+    "Credited ₹5000 Salary",
+    "Debited ₹1200 Amazon Shopping",
+    "Debited ₹500 Uber Ride",
+    "Credited ₹200 Cashback",
+    "Debited ₹3000 Rent"
+]
+
+mock_index = 0
+
+@app.route('/api/next-notification', methods=['GET'])
+def get_next_notification():
+    global mock_index
+    if mock_index < len(mock_notifications):
+        message = mock_notifications[mock_index]
+        mock_index += 1
+        return jsonify({"success": True, "notification": message})
+    else:
+        return jsonify({"success": False, "message": "No more notifications"})
+
+
 @app.route('/api/data', methods=['POST'])
 def save_data():
     try:
@@ -297,5 +319,6 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))  # Render gives PORT env var
     app.run(host="0.0.0.0", port=port, debug=True)
+
 
 
